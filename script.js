@@ -5,70 +5,86 @@ const detailsPanel = document.getElementById('detailsPanel');
 const detailTitle = document.getElementById('detailTitle');
 const detailDesc = document.getElementById('detailDesc');
 
+// --- GLOBAL STATE (Required for PDF Report) ---
+let currentDeviceData = [];
+
 // --- MOCK DATA ---
 const mockData = [
     {
         ip: "192.168.1.1",
         type: "Router",
         vulns: [
-            { port: 80, service: "HTTP", risk: "low", info: "Standard Web Port" },
-            { port: 443, service: "HTTPS", risk: "low", info: "Secure Web Port" }
+            { port: 80, service: "HTTP", risk: "low", info: "Standard Web Port", remediation: "Ensure firmware is updated." },
+            { port: 443, service: "HTTPS", risk: "low", info: "Secure Web Port", remediation: "None." }
         ]
     },
     {
         ip: "192.168.1.55",
         type: "Database",
         vulns: [
-            { port: 3306, service: "MySQL", risk: "medium", info: "Database Exposed" },
-            { port: 22, service: "SSH", risk: "low", info: "Secure Shell" }
+            { port: 3306, service: "MySQL", risk: "medium", info: "Database Exposed", remediation: "Restrict IP access to localhost." },
+            { port: 22, service: "SSH", risk: "low", info: "Secure Shell", remediation: "Use key-based auth." }
         ]
     },
     {
         ip: "192.168.1.102",
         type: "Legacy Server",
         vulns: [
-            { port: 23, service: "Telnet", risk: "high", info: "Unencrypted traffic! Exploit likely." },
-            { port: 21, service: "FTP", risk: "high", info: "Anonymous Login Allowed" },
-            { port: 80, service: "HTTP", risk: "medium", info: "Outdated Apache Version" }
+            { port: 23, service: "Telnet", risk: "high", info: "Unencrypted traffic!", remediation: "DISABLE IMMEDIATELY. Use SSH." },
+            { port: 21, service: "FTP", risk: "high", info: "Anonymous Login", remediation: "Disable anonymous login or use SFTP." },
+            { port: 80, service: "HTTP", risk: "medium", info: "Outdated Apache", remediation: "Update Apache to latest version." }
         ]
     }
 ];
 
 scanBtn.addEventListener('click', startScan);
 
-// REFACTORED: Now using async/await
 async function startScan() {
     const ip = document.getElementById('targetIp').value;
     deviceList.innerHTML = '<div class="empty-state">Scanning Network...</div>';
 
     try {
-        // Await the fetch response
         const res = await fetch('http://localhost:3000/ip-send', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ip: ip })
         });
 
-        // Check for HTTP errors (like 404 or 500)
         if (!res.ok) {
             throw new Error(`Server Error: ${res.status}`);
         }
 
-        // Await the JSON parsing
         const data = await res.json();
         
-        // Success! Render data
+        // FIX: Save data to global variable for the PDF report
+        currentDeviceData = data;
+        
         renderDeviceList(data);
 
     } catch (err) {
-        // Handle errors (Network fail, Python crash, etc.)
         console.error("Scan Failed, switching to mock data:", err);
         
-        // Use timeout to simulate a slight delay before showing fallback
         setTimeout(() => {
+            // FIX: Save mock data to global variable too
+            currentDeviceData = mockData;
             renderDeviceList(mockData);
         }, 1000);
     }
+}
+
+function calculateSecurityScore(device) {
+    let score = 100;
+    // Safety check if vulns is undefined
+    if (!device.vulns) return score;
+
+    const highRisks = device.vulns.filter(v => v.risk === 'high').length;
+    const medRisks = device.vulns.filter(v => v.risk === 'medium').length;
+    
+    score -= (highRisks * 20); 
+    score -= (medRisks * 10); 
+    
+    if (score < 0) score = 0;
+    return score;
 }
 
 function renderDeviceList(devices) {
@@ -86,6 +102,12 @@ function renderDeviceList(devices) {
         const riskCount = device.vulns ? device.vulns.filter(v => v.risk === 'high').length : 0;
         const color = riskCount > 0 ? '#ef4444' : '#10b981';
         const vulnCount = device.vulns ? device.vulns.length : 0;
+        
+        // FIX: Added the Security Score Badge here
+        const score = calculateSecurityScore(device);
+        let scoreColor = '#10b981'; // Green
+        if(score < 50) scoreColor = '#ef4444'; // Red
+        else if(score < 80) scoreColor = '#f59e0b'; // Orange
 
         card.innerHTML = `
             <div class="card-icon" style="color: ${color}">
@@ -94,6 +116,9 @@ function renderDeviceList(devices) {
             <div class="card-info">
                 <h4>${device.ip}</h4>
                 <p>${vulnCount} Services | ${riskCount} Critical</p>
+                <div style="font-size: 10px; margin-top: 5px; color: ${scoreColor}; font-weight: bold;">
+                    Security Score: ${score}/100
+                </div>
             </div>
         `;
 
@@ -153,11 +178,15 @@ function renderOrbitSystem(device) {
             detailsPanel.classList.remove('hidden');
             detailTitle.innerText = `Port ${vuln.port} (${vuln.service})`;
             
+            // FIX: Removed the line that was overwriting the HTML
+            detailDesc.innerHTML = `
+                <strong>Analysis:</strong> ${vuln.info} <br><br>
+                <strong>🛡️ Recommended Fix:</strong> <br> ${vuln.remediation || "No specific fix."}
+            `;
+            
             if(vuln.risk === 'high') detailTitle.style.color = '#ef4444';
             else if(vuln.risk === 'medium') detailTitle.style.color = '#f59e0b';
             else detailTitle.style.color = '#10b981';
-            
-            detailDesc.innerText = vuln.info;
         });
 
         orbitContainer.appendChild(vulnNode);
@@ -177,4 +206,61 @@ function addRing(size) {
     ring.style.top = '50%';
     ring.style.transform = 'translate(-50%, -50%)'; 
     orbitContainer.appendChild(ring);
+}
+
+// PDF DOWNLOAD LOGIC
+const downloadBtn = document.getElementById('downloadBtn');
+// FIX: Check if button exists before adding listener to prevent errors
+if(downloadBtn) {
+    downloadBtn.addEventListener('click', () => {
+        if (!window.jspdf) {
+            alert("PDF Library not loaded!");
+            return;
+        }
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        
+        doc.setFontSize(20);
+        doc.text("Net-Sentinel Security Report", 10, 10);
+        
+        let yPos = 30;
+        
+        if(currentDeviceData.length === 0) {
+            doc.text("No scan data available.", 10, 30);
+        } else {
+            currentDeviceData.forEach(device => {
+                doc.setFontSize(14);
+                doc.setTextColor(0, 0, 0);
+                doc.text(`Device: ${device.ip} (${device.type}) - Score: ${calculateSecurityScore(device)}`, 10, yPos);
+                yPos += 10;
+                
+                doc.setFontSize(10);
+                if(device.vulns) {
+                    device.vulns.forEach(v => {
+                        // Color code the PDF text
+                        if(v.risk === 'high') doc.setTextColor(255, 0, 0);
+                        else if(v.risk === 'medium') doc.setTextColor(255, 165, 0);
+                        else doc.setTextColor(0, 128, 0);
+
+                        doc.text(` - [${v.risk.toUpperCase()}] Port ${v.port}: ${v.service}`, 15, yPos);
+                        yPos += 7;
+                        
+                        // Add fix in black
+                        doc.setTextColor(50, 50, 50);
+                        doc.text(`   Fix: ${v.remediation || "N/A"}`, 15, yPos);
+                        yPos += 10;
+                    });
+                }
+                yPos += 10; 
+                
+                // Add page if too long
+                if(yPos > 280) {
+                    doc.addPage();
+                    yPos = 20;
+                }
+            });
+        }
+        
+        doc.save("net-sentinel-report.pdf");
+    });
 }
