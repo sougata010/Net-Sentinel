@@ -1,10 +1,22 @@
 import nmap
-import socket
 import sys
+import socket
 import json
+target_ip = "192.168.0.1/24"
 if len(sys.argv) > 1:
     target_ip = sys.argv[1]
 
+def get_hostname(ip, nmap_name):
+    if nmap_name and nmap_name != ip: 
+        return nmap_name
+    try:
+        return socket.gethostbyaddr(ip)[0]
+    except: 
+        return ""
+def get_hostname(ip, nmap_name):
+    if nmap_name and nmap_name != ip: return nmap_name
+    try: return socket.gethostbyaddr(ip)[0]
+    except: return ""
 def analyze_risk(port, service_name):
     risk = "low"
     info = f"Standard {service_name} service"
@@ -71,40 +83,19 @@ def analyze_risk(port, service_name):
         fix = "Restrict access to local network only."
 
     return risk, info, fix
-def guess_device_type(host_data, open_ports):
-  
-    guessed_type = "Unknown Device"
-    
-    if 'vendor' in host_data and host_data['vendor']:
-        vendor_name = list(host_data['vendor'].values())[0].lower()
-        
-        if "apple" in vendor_name: return "Apple Device"
-        if "espressif" in vendor_name: return "Smart Home (IoT)"
-        if "raspberry" in vendor_name: return "Raspberry Pi"
-        if "canon" in vendor_name or "hp" in vendor_name or "epson" in vendor_name: return "Printer"
-        if "synology" in vendor_name: return "NAS Server"
-    if 631 in open_ports: return "Printer"         
-    if 554 in open_ports: return "IoT Camera"     
-    if 53 in open_ports: return "Router/Gateway"   
-    if 3389 in open_ports: return "Windows PC"     
-    if 22 in open_ports and 80 not in open_ports: return "Linux Server"
-    if 80 in open_ports or 443 in open_ports: return "Web Server"
-    
-    return "Workstation"
+
 ip=target_ip
 nm=nmap.PortScanner()
 output_list=[]
-scanning=nm.scan(hosts=ip,ports="20-1024,3306,8080,5555,554,631",arguments="-sT -T4")#NORMAL SCAN
-#scanning=nm.scan(hosts=ip,arguments="-sV --script vuln")#DEEP SCAN
+scanning=nm.scan(hosts=ip,arguments="-F -T4 -sV --version-light --min-hostgroup 64 -Pn -O --osscan-limit")#NORMAL SCAN
+
 for host in nm.all_hosts():
-    open_ports_list = []
     vuln_list = []
     for proto in nm[host].all_protocols():
         for port in (nm[host][proto].keys()): 
             state = nm[host][proto][port]["state"]
 
             if state == "open":
-                open_ports_list.append(port)
                 service = nm[host][proto][port]["name"]
                 risk_status,info_status,fix_status=analyze_risk(port,service)
                 vuln_list.append({
@@ -114,10 +105,29 @@ for host in nm.all_hosts():
                     "info": info_status,
                     "remediation": fix_status
                 })
-        device=guess_device_type(nm[host],open_ports_list)
+        
+        hostname = nm[host].hostname()
+        resolved_name = get_hostname(host, hostname)
+        vendor_name = ""
+        if 'addresses' in nm[host] and 'mac' in nm[host]['addresses']:
+            mac_addr = nm[host]['addresses']['mac']
+            if 'vendor' in nm[host] and mac_addr in nm[host]['vendor']:
+                vendor_name = nm[host]['vendor'][mac_addr]
+        os_name = ""
+        if 'osmatch' in nm[host] and nm[host]['osmatch']:
+            os_name = nm[host]['osmatch'][0]['name']
+        if resolved_name:
+            display_name = resolved_name
+        elif vendor_name:
+            display_name = f"{vendor_name} Device"
+        elif os_name:
+            display_name = os_name
+        else:
+            display_name="Unknown Device"
+        
         output_list.append({
         "ip": host,
-        "type": device,
+        "type":display_name,
         "vulns": vuln_list
         })
 print(json.dumps(output_list))

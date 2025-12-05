@@ -3,62 +3,123 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Net-Sentinel | Vulnerability Scanner</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <title>Net-Sentinel | Enterprise Vulnerability Manager</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
 
-    <div class="app-container">
+    <div class="app-layout">
         <aside class="sidebar">
-            <div class="logo">
-                <i class="fa-solid fa-layer-group"></i> Net-Sentinel
-            </div>
-            <button id="downloadBtn" style="margin-top: 10px; background: #6366f1;">
-    <i class="fa-solid fa-file-pdf"></i> Download Report
-</button>
-
-            <div class="search-box">
-                <label>Target IP</label>
-                <div class="input-wrapper">
-                    <input type="text" id="targetIp" placeholder="192.168.1.1" value="192.168.1.1">
-                    <button id="scanBtn"><i class="fa-solid fa-search"></i></button>
+            <div class="brand-section">
+                <div class="logo-icon"><i class="fa-solid fa-shield-cat"></i></div>
+                <div class="brand-text">
+                    <h1>Net-Sentinel</h1>
+                    <span class="version-tag">PRO v1.0</span>
                 </div>
             </div>
-            <button id="aiBtn" style="margin-top: 10px; background: linear-gradient(45deg, #a855f7, #ec4899); border: none; padding: 10px 20px;">
-    <i class="fa-solid fa-brain"></i> Ask AI Analyst
-</button>
 
-<div id="aiModal" class="modal hidden">
-    <div class="modal-content">
-        <span class="close-modal">&times;</span>
-        <h3><i class="fa-solid fa-robot"></i> AI Security Assessment</h3>
-        <div id="aiLoader" class="hidden">Thinking... <i class="fa-solid fa-spinner fa-spin"></i></div>
-        <p id="aiText" style="white-space: pre-line; line-height: 1.6;"></p>
-    </div>
-</div>
-            <div class="device-list-header">Detected Devices</div>
-            <div id="deviceList" class="device-list">
-                <div class="empty-state">Ready to scan...</div>
+            <div class="nav-section">
+                <label>OPERATIONS</label>
+                
+                <div class="input-group">
+                    <i class="fa-solid fa-crosshairs"></i>
+                    <input type="text" id="targetIp" placeholder="Enter Target IP" value="192.168.1.1">
+                </div>
+
+                <button id="scanBtn" class="primary-btn">
+                    <span class="btn-icon"><i class="fa-solid fa-radar"></i></span>
+                    <span class="btn-text">Initiate Deep Scan</span>
+                    <div class="btn-shine"></div>
+                </button>
+            </div>
+
+            <div class="nav-section">
+                <label>REPORTS & ANALYSIS</label>
+                <button id="aiBtn" class="secondary-btn ai-trigger">
+                    <i class="fa-solid fa-sparkles"></i> AI Analyst Insight
+                </button>
+                <button id="viewToggleBtn" class="secondary-btn">
+    <i class="fa-solid fa-share-nodes"></i> Toggle Network Map
+</button>
+                <button id="downloadBtn" class="secondary-btn">
+                    <i class="fa-solid fa-file-export"></i> Export PDF Report
+                </button>
+            </div>
+
+            <div class="device-list-container">
+                <div class="section-header">
+                    <span>DETECTED ASSETS</span>
+                    <span class="badge" id="assetCount">0</span>
+                </div>
+                <div id="deviceList" class="device-list">
+                    <div class="empty-state">
+                        <i class="fa-solid fa-server"></i>
+                        <p>No assets detected.</p>
+                    </div>
+                </div>
             </div>
         </aside>
 
-        <main class="main-view">
-            <div id="orbitContainer" class="orbit-system">
-                <div class="placeholder-msg">
-                    <i class="fa-solid fa-network-wired"></i>
-                    <h2>Select a Device</h2>
-                    <p>Scan the network and click a card to view vulnerability orbits.</p>
+        <main class="main-workspace">
+            <header class="workspace-header">
+                <div class="breadcrumb">
+                    <i class="fa-solid fa-network-wired"></i> Network Topology / <span id="activeTarget">None</span>
+                </div>
+                <div class="system-status">
+                    <span class="status-indicator online"></span> System Operational
+                </div>
+            </header>
+
+            <div class="canvas-area">
+                <div id="orbitContainer" class="orbit-system">
+                    <div class="placeholder-msg">
+                        <div class="icon-pulse">
+                            <i class="fa-solid fa-satellite-dish"></i>
+                        </div>
+                        <h2>Awaiting Target Acquisition</h2>
+                        <p>Enter an IP address and initiate scan to visualize attack surface.</p>
+                    </div>
+                </div>
+                <div id="networkMap" class="network-map hidden"></div>
+                <div id="detailsPanel" class="details-card hidden">
+                    <div class="card-header">
+                        <div id="vulnRiskBadge" class="risk-badge">HIGH RISK</div>
+                        <button class="close-details"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                    <h3 id="detailTitle">Port 23 (Telnet)</h3>
+                    <div class="detail-body">
+                        <div class="info-row">
+                            <span class="label">ANALYSIS</span>
+                            <p id="detailDesc">Unencrypted traffic detected.</p>
+                        </div>
+                        <div class="info-row remediation-box">
+                            <span class="label"><i class="fa-solid fa-shield-halved"></i> REMEDIATION</span>
+                            <p id="detailFix">Disable immediately.</p>
+                        </div>
+                    </div>
                 </div>
             </div>
-            
-            <div id="detailsPanel" class="details-panel hidden">
-                <h3 id="detailTitle">Details</h3>
-                <p id="detailDesc">Select a vulnerability bubble to see info.</p>
-            </div>
         </main>
+    </div>
+
+    <div id="aiModal" class="modal-overlay hidden">
+        <div class="modal-window">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-robot"></i> Intelligent Assessment</h3>
+                <button class="close-modal"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <div id="aiLoader" class="hidden">
+                    <div class="spinner"></div>
+                    <p>Analyzing network vectors...</p>
+                </div>
+                <div id="aiText" class="ai-response"></div>
+            </div>
+        </div>
     </div>
 
     <script src="script.js"></script>

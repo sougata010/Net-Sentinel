@@ -18,8 +18,7 @@ app.use(express.static('public'));
 app.use(cors());
 
 app.post("/ip-send", async (req, res) => {
-    const ip = req.body.ip;
-
+    const { ip } = req.body;
     if (!ip) {
         return res.status(400).json({ error: "No IP provided" });
     }
@@ -29,7 +28,7 @@ app.post("/ip-send", async (req, res) => {
 
     try {
         const dataString = await new Promise((resolve, reject) => {
-            const python = spawn('python', ['-u', scriptPath, ip]);
+            const python = spawn('python', ['-u', scriptPath,ip]);
             let output = '';
 
             python.stdout.on('data', (data) => {
