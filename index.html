@@ -3,102 +3,135 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Net-Sentinel | Enterprise Vulnerability Manager</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
+    <title>Net-Sentinel | AI Security Core</title>
+    
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    
+    <!-- Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+    <!-- Libraries -->
     <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 </head>
 <body>
 
+    <div class="grid-bg"></div>
+
     <div class="app-layout">
+        <!-- SIDEBAR CONTROLS -->
         <aside class="sidebar">
             <div class="brand-section">
-                <div class="logo-icon"><i class="fa-solid fa-shield-cat"></i></div>
+                <div class="logo-glow">
+                    <i class="fa-solid fa-shield-halved"></i>
+                </div>
                 <div class="brand-text">
-                    <h1>Net-Sentinel</h1>
-                    <span class="version-tag">PRO v1.0</span>
+                    <h1>NET-SENTINEL</h1>
+                    <span class="version-tag">AI CORE V.2.0</span>
                 </div>
             </div>
 
-            <div class="nav-section">
-                <label>OPERATIONS</label>
-                
-                <div class="input-group">
+            <div class="control-group">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <label class="section-label">Target Acquisition</label>
+                    <button id="voiceBtn" class="mic-btn" title="Voice Command"><i class="fa-solid fa-microphone"></i></button>
+                </div>
+                <div class="cyber-input">
                     <i class="fa-solid fa-crosshairs"></i>
-                    <input type="text" id="targetIp" placeholder="Enter Target IP" value="192.168.1.1">
+                    <input type="text" id="targetIp" value="192.168.1.15" placeholder="Enter IP or Range">
                 </div>
-
-                <button id="scanBtn" class="primary-btn">
-                    <span class="btn-icon"><i class="fa-solid fa-radar"></i></span>
-                    <span class="btn-text">Initiate Deep Scan</span>
-                    <div class="btn-shine"></div>
+                <button id="scanBtn" class="neon-btn">
+                    <i class="fa-solid fa-radar"></i> INITIATE DEEP SCAN
                 </button>
             </div>
 
-            <div class="nav-section">
-                <label>REPORTS & ANALYSIS</label>
-                <button id="aiBtn" class="secondary-btn ai-trigger">
-                    <i class="fa-solid fa-sparkles"></i> AI Analyst Insight
-                </button>
-                <button id="viewToggleBtn" class="secondary-btn">
-    <i class="fa-solid fa-share-nodes"></i> Toggle Network Map
-</button>
-                <button id="downloadBtn" class="secondary-btn">
-                    <i class="fa-solid fa-file-export"></i> Export PDF Report
-                </button>
+            <div class="control-group">
+                <label class="section-label">Threat Analytics</label>
+                <div class="chart-container">
+                    <canvas id="riskChart"></canvas>
+                </div>
             </div>
 
-            <div class="device-list-container">
-                <div class="section-header">
-                    <span>DETECTED ASSETS</span>
-                    <span class="badge" id="assetCount">0</span>
+            <div class="control-group" style="flex-grow: 1; display: flex; flex-direction: column;">
+                <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                    <label class="section-label">Detected Assets</label>
+                    <span class="section-label" id="assetCount" style="color:var(--primary)">0</span>
                 </div>
                 <div id="deviceList" class="device-list">
-                    <div class="empty-state">
-                        <i class="fa-solid fa-server"></i>
-                        <p>No assets detected.</p>
+                    <!-- Dynamic Items -->
+                    <div style="text-align:center; margin-top:40px; color:var(--text-muted); font-size:12px;">
+                        <i class="fa-solid fa-satellite-dish" style="margin-bottom:10px; display:block; opacity:0.5;"></i>
+                        Awaiting Telemetry
                     </div>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <button id="aiBtn" class="ghost-btn ai-btn">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i> AI Remediation
+                </button>
+                <div style="display:flex; gap:10px;">
+                    <button id="viewToggleBtn" class="ghost-btn" style="flex:1;">
+                        <i class="fa-solid fa-network-wired"></i> Topology
+                    </button>
+                    <button id="downloadBtn" class="ghost-btn" style="flex:1;">
+                        <i class="fa-solid fa-file-pdf"></i> Report
+                    </button>
                 </div>
             </div>
         </aside>
 
+        <!-- MAIN VISUALIZATION -->
         <main class="main-workspace">
-            <header class="workspace-header">
+            <div class="scan-line" id="scanFx"></div>
+            
+            <header class="status-bar">
                 <div class="breadcrumb">
-                    <i class="fa-solid fa-network-wired"></i> Network Topology / <span id="activeTarget">None</span>
+                    <i class="fa-solid fa-layer-group"></i> 
+                    <span>VISUALIZATION DECK</span> 
+                    <span style="color:var(--glass-border)">/</span>
+                    <span id="activeTarget" style="color:white; font-family:var(--font-code);">IDLE</span>
                 </div>
-                <div class="system-status">
-                    <span class="status-indicator online"></span> System Operational
+                <div class="live-indicator">
+                    <div class="blink"></div> SYSTEM ONLINE
                 </div>
             </header>
 
-            <div class="canvas-area">
-                <div id="orbitContainer" class="orbit-system">
-                    <div class="placeholder-msg">
-                        <div class="icon-pulse">
-                            <i class="fa-solid fa-satellite-dish"></i>
-                        </div>
-                        <h2>Awaiting Target Acquisition</h2>
-                        <p>Enter an IP address and initiate scan to visualize attack surface.</p>
+            <div class="canvas-wrapper">
+                <!-- Solar System View (Default) -->
+                <!-- Important: Using flex for centering core -->
+                <div id="orbitContainer" class="orbit-container" style="display:flex; justify-content:center; align-items:center;">
+                    <div class="core-node" style="opacity:0.3">
+                        <i class="fa-solid fa-globe"></i>
                     </div>
                 </div>
-                <div id="networkMap" class="network-map hidden"></div>
-                <div id="detailsPanel" class="details-card hidden">
-                    <div class="card-header">
-                        <div id="vulnRiskBadge" class="risk-badge">HIGH RISK</div>
-                        <button class="close-details"><i class="fa-solid fa-xmark"></i></button>
+                
+                <!-- Topology View (Hidden by default) -->
+                <div id="networkMap" class="hidden"></div>
+                
+                <!-- Floating Details Panel -->
+                <div id="detailsPanel" class="details-panel">
+                    <div class="panel-header">
+                        <div id="vulnRiskBadge" class="risk-badge" style="background:var(--risk-high)">CRITICAL</div>
+                        <i class="fa-solid fa-xmark close-details" style="cursor:pointer; color:var(--text-muted)"></i>
                     </div>
-                    <h3 id="detailTitle">Port 23 (Telnet)</h3>
-                    <div class="detail-body">
-                        <div class="info-row">
-                            <span class="label">ANALYSIS</span>
-                            <p id="detailDesc">Unencrypted traffic detected.</p>
+                    <div class="panel-body">
+                        <h3 id="detailTitle" style="font-size:16px; margin-bottom:15px; color:white;">Port 80 (HTTP)</h3>
+                        <div class="data-row">
+                            <span class="data-label">Vulnerability Vector</span>
+                            <p id="detailDesc" class="data-val">Unencrypted Web Server Version 2.4</p>
                         </div>
-                        <div class="info-row remediation-box">
-                            <span class="label"><i class="fa-solid fa-shield-halved"></i> REMEDIATION</span>
-                            <p id="detailFix">Disable immediately.</p>
+                        <div class="fix-box">
+                            <span class="data-label" style="color:#05d5fa"><i class="fa-solid fa-shield-cat"></i> AI SUGGESTION</span>
+                            <p id="detailFix">Upgrade Apache to latest version and enforce SSL/TLS configuration immediately.</p>
+                        </div>
+                        <div class="panel-actions">
+                            <button id="generateScriptBtn" class="action-btn">
+                                <i class="fa-solid fa-code"></i> Generate Patch Script
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -106,22 +139,22 @@
         </main>
     </div>
 
-    <div id="aiModal" class="modal-overlay hidden">
-        <div class="modal-window">
-            <div class="modal-header">
-                <h3><i class="fa-solid fa-robot"></i> Intelligent Assessment</h3>
-                <button class="close-modal"><i class="fa-solid fa-xmark"></i></button>
+    <!-- AI MODAL -->
+    <div id="aiModal" class="modal-overlay">
+        <div class="ai-modal">
+            <div class="ai-header">
+                <div class="ai-title"><i class="fa-solid fa-brain"></i> SENTINEL AI ANALYSIS</div>
+                <i class="fa-solid fa-xmark close-modal" style="cursor:pointer; color:var(--text-muted)"></i>
             </div>
-            <div class="modal-body">
-                <div id="aiLoader" class="hidden">
-                    <div class="spinner"></div>
-                    <p>Analyzing network vectors...</p>
+            <div class="ai-content">
+                <div id="aiLoader" class="hidden" style="text-align:center; color:var(--accent);">
+                    <i class="fa-solid fa-circle-notch fa-spin" style="font-size:24px; margin-bottom:10px;"></i>
+                    <p>Processing Neural Net...</p>
                 </div>
-                <div id="aiText" class="ai-response"></div>
+                <div id="aiText" class="cursor"></div>
             </div>
         </div>
     </div>
-
-    <script src="script.js"></script>
+<script src="script.js"></script>
 </body>
 </html>

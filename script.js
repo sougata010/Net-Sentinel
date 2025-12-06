@@ -1,378 +1,436 @@
-// --- DOM ELEMENTS ---
-const scanBtn = document.getElementById('scanBtn');
-const deviceList = document.getElementById('deviceList');
-const orbitContainer = document.getElementById('orbitContainer');
-const detailsPanel = document.getElementById('detailsPanel');
-const assetCountLabel = document.getElementById('assetCount');
-const activeTargetLabel = document.getElementById('activeTarget');
-const aiBtn = document.getElementById('aiBtn');
-const aiModal = document.getElementById('aiModal');
-const aiText = document.getElementById('aiText');
-const aiLoader = document.getElementById('aiLoader');
-const closeModal = document.querySelector('.close-modal');
-const viewToggleBtn = document.getElementById('viewToggleBtn');
-const mapDiv = document.getElementById('networkMap');
-const downloadBtn = document.getElementById('downloadBtn');
 
-// --- STATE ---
-let currentDeviceData = [];
-let selectedDevice = null; // FIX: New variable to track selection
-let riskChartInstance = null;
-let networkInstance = null;
-let isMapView = false;
 
-// --- FALLBACK DATA ---
-const mockData = [{ ip: "192.168.1.1", type: "Router", vulns: [{ port: 80, service: "HTTP", risk: "low", info: "Web Interface", remediation: "Use HTTPS" }] }];
+        // --- LOGIC ---
+        
+        // Mock Data for Demo Fallback
+        const MOCK_DATA = [
+            { 
+                ip: "192.168.1.15", type: "Linux Server", os: "Ubuntu 20.04", 
+                vulns: [
+                    { port: 22, service: "SSH", risk: "low", info: "OpenSSH 7.2 Protocol 2.0", fix: "Disable Root Login. Use Keys." },
+                    { port: 80, service: "HTTP", risk: "medium", info: "Apache 2.4.18", fix: "Enable HTTPS (Certbot)." },
+                    { port: 3306, service: "MySQL", risk: "high", info: "MySQL 5.7 root access", fix: "Bind to localhost only. Set strong password." }
+                ] 
+            },
+            { ip: "192.168.1.100", type: "Workstation", os: "Windows 10", vulns: [] },
+            { ip: "192.168.1.1", type: "Gateway", os: "Cisco IOS", vulns: [{ port: 23, service: "Telnet", risk: "high", info: "Unencrypted Admin", fix: "Disable Telnet. Use SSH." }] }
+        ];
 
-// --- INITIALIZATION ---
-scanBtn.addEventListener('click', startScan);
+        // State
+        let currentData = [];
+        let selectedDevice = null;
+        let selectedVuln = null; // Track current vulnerability for script generation
+        let chartInstance = null;
+        let mapInstance = null;
+        let isMapView = false;
 
-if(closeModal) {
-    closeModal.onclick = () => aiModal.classList.add('hidden');
-    window.onclick = (e) => { if(e.target == aiModal) aiModal.classList.add('hidden'); }
-}
+        // Elements
+        const els = {
+            scanBtn: document.getElementById('scanBtn'),
+            voiceBtn: document.getElementById('voiceBtn'),
+            deviceList: document.getElementById('deviceList'),
+            orbit: document.getElementById('orbitContainer'),
+            map: document.getElementById('networkMap'),
+            details: document.getElementById('detailsPanel'),
+            scanFx: document.getElementById('scanFx'),
+            aiModal: document.getElementById('aiModal'),
+            aiText: document.getElementById('aiText'),
+            assetCount: document.getElementById('assetCount'),
+            targetIp: document.getElementById('targetIp'),
+            generateScriptBtn: document.getElementById('generateScriptBtn')
+        };
 
-const closeDetailsBtn = document.querySelector('.close-details');
-if(closeDetailsBtn) {
-    closeDetailsBtn.addEventListener('click', () => detailsPanel.classList.add('hidden'));
-}
-
-// --- CORE SCAN FUNCTION ---
-async function startScan() {
-    const ip = document.getElementById('targetIp').value;
-    const isDeep = document.getElementById('deepScanToggle')?.checked || false;
-
-    // UI Loading State
-    deviceList.innerHTML = `<div style="padding:20px; text-align:center; color:#94a3b8;"><i class="fa-solid fa-spinner fa-spin"></i> Scanning...</div>`;
-    activeTargetLabel.innerText = "Scanning...";
-    if(isDeep) showToast("Deep Scan Initiated...", "info");
-
-    try {
-        const res = await fetch('http://localhost:3000/ip-send', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ip: ip, deepScan: isDeep })
+        // Init Chart
+        const ctx = document.getElementById('riskChart').getContext('2d');
+        chartInstance = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['High', 'Med', 'Low'],
+                datasets: [{
+                    data: [0, 0, 0],
+                    backgroundColor: ['#ff2a6d', '#ffc800', '#05d5fa'],
+                    borderWidth: 0,
+                    hoverOffset: 4
+                }]
+            },
+            options: {
+                cutout: '70%',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } }
+            }
         });
 
-        if (!res.ok) throw new Error("Server Error");
-        const data = await res.json();
-        
-        currentDeviceData = data;
-        
-        // FIX: Default to first device if available
-        if(data.length > 0) {
-            selectedDevice = data[0];
-        }
+        // Listeners
+        els.scanBtn.addEventListener('click', runScan);
+        els.voiceBtn.addEventListener('click', startVoiceCommand);
+        document.querySelector('.close-details').addEventListener('click', () => els.details.classList.remove('visible'));
+        document.getElementById('aiBtn').addEventListener('click', openAI);
+        document.querySelector('.close-modal').addEventListener('click', () => els.aiModal.classList.remove('open'));
+        document.getElementById('viewToggleBtn').addEventListener('click', toggleView);
+        document.getElementById('downloadBtn').addEventListener('click', exportPDF);
+        els.generateScriptBtn.addEventListener('click', generateFixScript);
 
-        activeTargetLabel.innerText = ip;
-        updateAssetCount(data.length);
-        renderDeviceList(data);
-        
-        // Refresh map if active
-        if(isMapView) renderNetworkMap(data);
-        else if(selectedDevice) renderOrbitSystem(selectedDevice); // Render the selected one immediately
-        
-        showToast("Scan Complete", "success");
-
-    } catch (err) {
-        console.error(err);
-        showToast("Scan Failed. Using Simulation.", "error");
-        setTimeout(() => {
-            currentDeviceData = mockData;
-            selectedDevice = mockData[0];
-            updateAssetCount(mockData.length);
-            renderDeviceList(mockData);
-        }, 1000);
-    }
-}
-
-// --- SIDEBAR LIST ---
-function renderDeviceList(devices) {
-    deviceList.innerHTML = '';
-    updateRiskChart(devices); 
-
-    if(devices.length === 0) {
-        deviceList.innerHTML = '<div class="empty-state">No devices found.</div>';
-        return;
-    }
-
-    devices.forEach((device) => {
-        const card = document.createElement('div');
-        card.className = 'device-card';
-        
-        // Calculate Score
-        let score = 100;
-        if(device.vulns) {
-            const high = device.vulns.filter(v => v.risk === 'high').length;
-            const med = device.vulns.filter(v => v.risk === 'medium').length;
-            score -= (high * 25) + (med * 10);
-        }
-        if(score < 0) score = 0;
-        
-        let scoreColor = '#10b981'; // Green
-        if(score < 50) scoreColor = '#ef4444'; // Red
-        else if(score < 80) scoreColor = '#f59e0b'; // Orange
-
-        // Name Logic
-        let displayName = device.type;
-        const isIp = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(device.type);
-        if(isIp) displayName = "Unknown Device";
-
-        let icon = 'server';
-        const typeLower = (device.type || '').toLowerCase();
-        if(typeLower.includes('router')) icon = 'wifi';
-        if(typeLower.includes('phone') || typeLower.includes('android')) icon = 'mobile-screen';
-        if(typeLower.includes('apple')) icon = 'apple';
-        if(typeLower.includes('windows') || typeLower.includes('pc')) icon = 'desktop';
-
-        card.innerHTML = `
-            <div class="card-icon" style="color: ${scoreColor}">
-                <i class="fa-solid fa-${icon}"></i>
-            </div>
-            <div class="card-info">
-                <h4 style="font-weight:700; color:white;">${displayName}</h4>
-                <p style="font-family:monospace; opacity:0.7;">${device.ip}</p>
-                <div style="font-size:10px; margin-top:4px; color:${scoreColor}; font-weight:700;">
-                    Score: ${score}/100
-                </div>
-            </div>
-        `;
-
-        card.addEventListener('click', () => {
-            // FIX: Update the global selected device
-            selectedDevice = device; 
+        // --- VOICE CONTROL ---
+        function startVoiceCommand() {
+            if (!('webkitSpeechRecognition' in window)) {
+                alert("Voice control not supported in this browser. Try Chrome.");
+                return;
+            }
             
-            // Visual Update
-            document.querySelectorAll('.device-card').forEach(c => c.classList.remove('active'));
-            card.classList.add('active');
+            const recognition = new webkitSpeechRecognition();
+            recognition.lang = 'en-US';
+            recognition.start();
 
-            isMapView = false;
-            orbitContainer.classList.remove('hidden');
-            mapDiv.classList.add('hidden');
-            renderOrbitSystem(device);
-        });
+            els.voiceBtn.classList.add('listening');
 
-        deviceList.appendChild(card);
-    });
-}
-
-// --- RISK ANALYTICS CHART ---
-function updateRiskChart(devices) {
-    const ctx = document.getElementById('riskChart');
-    if(!ctx) return;
-    
-    let h=0, m=0, l=0;
-    devices.forEach(d => {
-        if(d.vulns) {
-            h += d.vulns.filter(v=>v.risk==='high').length;
-            m += d.vulns.filter(v=>v.risk==='medium').length;
-            l += d.vulns.filter(v=>v.risk==='low').length;
-        }
-    });
-
-    if(riskChartInstance) riskChartInstance.destroy();
-    
-    riskChartInstance = new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-            labels: ['Critical', 'Warning', 'Safe'],
-            datasets: [{ data: [h, m, l], backgroundColor: ['#ef4444','#f59e0b','#10b981'], borderWidth: 0 }]
-        },
-        options: { responsive: true, maintainAspectRatio: false, cutout: '75%', plugins: { legend: { display: false } } }
-    });
-}
-
-// --- SOLAR SYSTEM VISUALIZATION ---
-function renderOrbitSystem(device) {
-    orbitContainer.innerHTML = '';
-    detailsPanel.classList.add('hidden');
-    
-    // Update Active Target Label
-    if(activeTargetLabel) activeTargetLabel.innerText = `${device.type} (${device.ip})`;
-
-    const core = document.createElement('div');
-    core.className = 'core-node';
-    core.innerHTML = `<i class="fa-solid fa-server"></i><span>${device.ip}</span>`;
-    orbitContainer.appendChild(core);
-
-    if(!device.vulns) return;
-
-    const total = device.vulns.length;
-    const step = (2*Math.PI)/total;
-    
-    device.vulns.forEach((v, i) => {
-        const angle = i * step;
-        let r = 200;
-        if(v.risk === 'high') r = 120;
-        else if(v.risk === 'medium') r = 160;
-
-        const x = Math.cos(angle) * r;
-        const y = Math.sin(angle) * r;
-
-        const node = document.createElement('div');
-        node.className = `vuln-node risk-${v.risk}`;
-        node.style.left = '50%'; node.style.top = '50%';
-        node.style.marginLeft = '-20px'; node.style.marginTop = '-20px';
-        node.style.transform = `translate(${x}px, ${y}px)`;
-        node.innerHTML = `<span>${v.port}</span>`;
-
-        node.addEventListener('mouseenter', () => {
-            detailsPanel.classList.remove('hidden');
-            
-            const badge = document.getElementById('vulnRiskBadge');
-            badge.innerText = v.risk.toUpperCase();
-            badge.style.background = v.risk === 'high' ? '#ef4444' : v.risk === 'medium' ? '#f59e0b' : '#10b981';
-
-            document.getElementById('detailTitle').innerText = `Port ${v.port} (${v.service})`;
-            document.getElementById('detailDesc').innerText = v.info;
-            document.getElementById('detailFix').innerText = v.remediation || "No fix available.";
-            document.querySelector('.remediation-box').style.borderLeftColor = badge.style.background;
-        });
-
-        orbitContainer.appendChild(node);
-    });
-    
-    [120, 160, 200].forEach(r => {
-        const ring = document.createElement('div');
-        ring.className = 'ring';
-        ring.style.width = (r*2)+'px'; ring.style.height = (r*2)+'px';
-        orbitContainer.appendChild(ring);
-    });
-}
-
-// --- NETWORK TOPOLOGY MAP ---
-if(viewToggleBtn) {
-    viewToggleBtn.addEventListener('click', () => {
-        isMapView = !isMapView;
-        if(isMapView) {
-            orbitContainer.classList.add('hidden');
-            mapDiv.classList.remove('hidden');
-            renderNetworkMap(currentDeviceData);
-            showToast("Topology View Active", "info");
-        } else {
-            orbitContainer.classList.remove('hidden');
-            mapDiv.classList.add('hidden');
-        }
-    });
-}
-
-function renderNetworkMap(devices) {
-    if(!devices || !devices.length) return;
-    const nodes = [{id: 'gw', label: 'Gateway', shape: 'hexagon', color: '#6366f1', font: {color:'white'}, size: 30}];
-    const edges = [];
-
-    devices.forEach((d, i) => {
-        const typeStr = (d.type || 'unknown').toLowerCase();
-        let shape = 'dot';
-        if(typeStr.includes('windows')) shape = 'square';
-        if(typeStr.includes('apple')) shape = 'diamond';
-        if(typeStr.includes('router')) shape = 'hexagon';
-
-        const isHigh = d.vulns && d.vulns.some(v => v.risk === 'high');
-        const color = isHigh ? '#ef4444' : '#10b981';
-
-        const id = i + 100;
-        nodes.push({ id: id, label: `${d.type}\n${d.ip}`, shape: shape, color: color, font: {color:'#cbd5e1'} });
-        edges.push({ from: 'gw', to: id, color: {color:'#475569', opacity:0.4} });
-    });
-
-    if(networkInstance) networkInstance.destroy();
-    networkInstance = new vis.Network(mapDiv, { nodes, edges }, {
-        physics: { stabilization: false, barnesHut: { gravitationalConstant: -3000 } },
-        interaction: { hover: true }
-    });
-    
-    networkInstance.on("click", (p) => {
-        if(p.nodes.length) {
-            const idx = p.nodes[0] - 100;
-            const device = devices[idx];
-            if(device) {
-                // FIX: Update selectedDevice when clicking map node
-                selectedDevice = device;
+            recognition.onresult = (event) => {
+                const command = event.results[0][0].transcript.toLowerCase();
+                console.log("Voice Command:", command);
                 
-                isMapView = false;
-                orbitContainer.classList.remove('hidden');
-                mapDiv.classList.add('hidden');
-                renderOrbitSystem(device);
-                showToast(`Inspecting ${device.ip}`, "info");
+                if (command.includes("scan")) {
+                    // Extract IP if spoken, otherwise just run
+                    const words = command.split(" ");
+                    const potentialIp = words.find(w => w.match(/\d+\.\d+\.\d+\.\d+/));
+                    if(potentialIp) els.targetIp.value = potentialIp;
+                    runScan();
+                } else if (command.includes("topology") || command.includes("map")) {
+                    if(!isMapView) toggleView();
+                } else if (command.includes("orbit") || command.includes("solar")) {
+                    if(isMapView) toggleView();
+                } else if (command.includes("report") || command.includes("download")) {
+                    exportPDF();
+                }
+                
+                els.voiceBtn.classList.remove('listening');
+            };
+
+            recognition.onerror = () => els.voiceBtn.classList.remove('listening');
+            recognition.onend = () => els.voiceBtn.classList.remove('listening');
+        }
+
+        async function runScan() {
+            const ip = els.targetIp.value;
+            const isDeep = true; 
+
+            // UI Loading State
+            document.querySelector('.main-workspace').classList.add('scanning');
+            els.deviceList.innerHTML = `<div style="padding:20px; text-align:center; color:var(--primary); font-family:var(--font-code);"><i class="fa-solid fa-radar fa-spin"></i> SCANNING NETBLOCK...</div>`;
+            els.scanFx.style.opacity = '1'; 
+
+            try {
+                // Real Backend Call
+                const res = await fetch('http://localhost:3000/ip-send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ip: ip, deepScan: isDeep })
+                });
+
+                if (!res.ok) throw new Error("Server Error");
+                const data = await res.json();
+                
+                // Success
+                document.querySelector('.main-workspace').classList.remove('scanning');
+                els.scanFx.style.opacity = '0';
+                processResults(data);
+
+            } catch (err) {
+                console.error(err);
+                // Fallback / Error Handling
+                document.querySelector('.main-workspace').classList.remove('scanning');
+                els.scanFx.style.opacity = '0';
+                
+                // Use mock data as fallback or show error
+                els.deviceList.innerHTML = `<div style="padding:20px; text-align:center; color:var(--risk-high); font-size:12px;"><i class="fa-solid fa-triangle-exclamation"></i> Server Offline. Loading Simulation Data...</div>`;
+                
+                setTimeout(() => {
+                    processResults(MOCK_DATA);
+                }, 1500);
             }
         }
-    });
-}
 
-// --- AI ANALYST ---
-aiBtn.addEventListener('click', async () => {
-    // FIX: Use 'selectedDevice' instead of just checking array length
-    const target = selectedDevice || currentDeviceData[0];
-
-    if(!target) return showToast("Select a device first!", "error");
-    
-    aiModal.classList.remove('hidden');
-    aiLoader.classList.remove('hidden');
-    aiText.innerText = "";
-    
-    try {
-        const res = await fetch('http://localhost:3000/ai-analyze', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            // FIX: Send the currently selected device
-            body: JSON.stringify({ scanData: target }) 
-        });
-        const d = await res.json();
-        aiLoader.classList.add('hidden');
-        typeWriterEffect(d.analysis || "No analysis returned.");
-    } catch {
-        aiLoader.classList.add('hidden');
-        aiText.innerText = "Error connecting to AI.";
-    }
-});
-
-function typeWriterEffect(text) {
-    let i = 0; aiText.innerHTML = "";
-    function type() {
-        if (i < text.length) {
-            aiText.innerHTML += text.charAt(i) === '\n' ? '<br>' : text.charAt(i);
-            i++;
-            setTimeout(type, 15);
+        function processResults(data) {
+            currentData = data;
+            els.assetCount.innerText = data.length;
+            renderList(data);
+            updateChart(data);
+            
+            // Select first
+            if(data.length > 0) selectDevice(data[0]);
         }
-    }
-    type();
-}
 
-// --- PDF EXPORT ---
-if(downloadBtn) {
-    downloadBtn.addEventListener('click', () => {
-        if(!window.jspdf) return showToast("PDF Library Missing", "error");
-        const { jsPDF } = window.jspdf;
-        const doc = new jsPDF();
-        
-        doc.setFillColor(15, 23, 42); doc.rect(0, 0, 210, 30, "F");
-        doc.setTextColor(255,255,255); doc.setFontSize(18); doc.text("Security Report", 10, 20);
-        
-        let y=40;
-        currentDeviceData.forEach(d => {
-            doc.setTextColor(0,0,0); doc.setFontSize(14); doc.setFont("helvetica", "bold");
-            doc.text(`${d.type} (${d.ip})`, 10, y);
-            y+=10;
-            doc.setFont("helvetica", "normal"); doc.setFontSize(10);
-            if(d.vulns) d.vulns.forEach(v => { 
-                doc.setTextColor(v.risk==='high'?200:0, 0, 0);
-                doc.text(`[${v.risk.toUpperCase()}] Port ${v.port}: ${v.info}`, 15, y); y+=7; 
+        function renderList(data) {
+            els.deviceList.innerHTML = '';
+            data.forEach((d, idx) => {
+                const el = document.createElement('div');
+                el.className = 'device-card';
+                el.innerHTML = `
+                    <i class="fa-solid fa-${d.type.includes('Server')?'server': d.type.includes('Gateway')?'wifi':'desktop'} d-icon"></i>
+                    <div class="d-info">
+                        <h4>${d.type}</h4>
+                        <p>${d.ip}</p>
+                    </div>
+                `;
+                el.onclick = () => {
+                    document.querySelectorAll('.device-card').forEach(c => c.classList.remove('active'));
+                    el.classList.add('active');
+                    selectDevice(d);
+                };
+                els.deviceList.appendChild(el);
             });
-            y+=10;
-            if(y > 270) { doc.addPage(); y=20; }
-        });
-        doc.save("security-report.pdf");
-    });
-}
+            // Active first
+            if(els.deviceList.firstChild) els.deviceList.firstChild.classList.add('active');
+        }
 
-// --- HELPERS ---
-function updateAssetCount(n) { if(assetCountLabel) assetCountLabel.innerText = n; }
+        function selectDevice(d) {
+            selectedDevice = d;
+            document.getElementById('activeTarget').innerText = `${d.ip} [${d.os || 'Unknown OS'}]`;
+            
+            if(isMapView) return; // Map handles its own selection visual
+            
+            renderOrbit(d);
+        }
 
-function showToast(msg, type) {
-    const t = document.createElement('div');
-    t.className = `toast ${type}`;
-    t.innerHTML = `<i class="fa-solid fa-circle-info"></i> ${msg}`;
-    document.getElementById('toastContainer').appendChild(t);
-    setTimeout(() => { t.style.opacity='0'; setTimeout(()=>t.remove(),300); }, 3000);
-}
+        function renderOrbit(d) {
+            els.orbit.innerHTML = '';
+            els.details.classList.remove('visible');
+
+            // Add Rings
+            [140, 220, 300].forEach(size => {
+                const ring = document.createElement('div');
+                ring.className = 'orbit-ring';
+                ring.style.width = size + 'px'; ring.style.height = size + 'px';
+                els.orbit.appendChild(ring);
+            });
+
+            // Core
+            const core = document.createElement('div');
+            core.className = 'core-node';
+            core.innerHTML = `<i class="fa-solid fa-server"></i><span>${d.ip}</span>`;
+            els.orbit.appendChild(core);
+
+            if(!d.vulns) return;
+
+            // Satellites
+            const total = d.vulns.length;
+            const angleStep = (2 * Math.PI) / total;
+
+            d.vulns.forEach((v, i) => {
+                const angle = i * angleStep;
+                const dist = v.risk === 'high' ? 70 : v.risk === 'medium' ? 110 : 150; // Different orbits based on risk
+                
+                const x = Math.cos(angle) * dist;
+                const y = Math.sin(angle) * dist;
+
+                const node = document.createElement('div');
+                node.className = `vuln-node risk-${v.risk}`;
+                node.style.transform = `translate(${x}px, ${y}px)`;
+                // Fix for hover effect logic in CSS requiring variables or pure transform
+                // Instead of CSS translate, we use left/top for base pos
+                node.style.left = '50%'; node.style.top = '50%';
+                node.style.marginTop = '-22px'; node.style.marginLeft = '-22px'; // center
+                
+                node.innerHTML = `<span>${v.port}</span>`;
+                
+                node.onclick = () => showDetails(v);
+                
+                els.orbit.appendChild(node);
+            });
+        }
+
+        function showDetails(v) {
+            selectedVuln = v; // Store for script generation
+            const p = els.details;
+            const colors = { high: '#ff2a6d', medium: '#ffc800', low: '#05d5fa' };
+            
+            document.getElementById('vulnRiskBadge').innerText = v.risk.toUpperCase();
+            document.getElementById('vulnRiskBadge').style.background = colors[v.risk];
+            document.getElementById('detailTitle').innerText = `Port ${v.port} (${v.service})`;
+            document.getElementById('detailDesc').innerText = v.info;
+            document.getElementById('detailFix').innerText = v.remediation || v.fix || "No specific fix data.";
+            
+            p.classList.add('visible');
+        }
+
+        // --- SCRIPT GENERATION ---
+        function generateFixScript() {
+            if(!selectedVuln) return;
+            
+            let scriptContent = `#!/bin/bash\n# Net-Sentinel Auto-Remediation Script\n# Target Port: ${selectedVuln.port} (${selectedVuln.service})\n\n`;
+            scriptContent += `echo "Starting security patch for Port ${selectedVuln.port}..."\n`;
+            
+            // Logic based on service (Simple examples)
+            if(selectedVuln.port == 80) {
+                scriptContent += `\n# Secure HTTP\nsudo ufw allow 443/tcp\nsudo ufw delete allow 80/tcp\necho "Please install Certbot: sudo apt install certbot"\n`;
+            } else if (selectedVuln.port == 22) {
+                scriptContent += `\n# Hardening SSH\nsudo sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin no/' /etc/ssh/sshd_config\nsudo systemctl restart ssh\n`;
+            } else {
+                scriptContent += `\n# General Firewall Rule\nsudo ufw deny ${selectedVuln.port}\n`;
+            }
+
+            scriptContent += `\necho "Remediation steps applied. Verify connectivity."`;
+
+            const blob = new Blob([scriptContent], { type: "text/x-sh" });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = `fix_port_${selectedVuln.port}.sh`;
+            link.click();
+        }
+
+        function updateChart(data) {
+            let h=0, m=0, l=0;
+            data.forEach(d => {
+                if(d.vulns) {
+                    h += d.vulns.filter(v=>v.risk==='high').length;
+                    m += d.vulns.filter(v=>v.risk==='medium').length;
+                    l += d.vulns.filter(v=>v.risk==='low').length;
+                }
+            });
+            chartInstance.data.datasets[0].data = [h, m, l];
+            chartInstance.update();
+        }
+
+        // --- AI ---
+        async function openAI() {
+            if(!selectedDevice) return alert("Select a target first.");
+            
+            els.aiModal.classList.add('open');
+            document.getElementById('aiLoader').classList.remove('hidden');
+            els.aiText.innerHTML = ""; // Clear previous
+
+            try {
+                // Try to reach backend
+                const res = await fetch('http://localhost:3000/ai-analyze', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ scanData: selectedDevice }) 
+                });
+                
+                if (!res.ok) throw new Error("AI Service Unavailable");
+                const d = await res.json();
+                
+                document.getElementById('aiLoader').classList.add('hidden');
+                typeWriter(d.analysis || "No analysis returned from neural core.");
+
+            } catch (err) {
+                console.error("Backend offline, generating simulation...");
+                document.getElementById('aiLoader').classList.add('hidden');
+                
+                // GENERATE DYNAMIC SIMULATION TEXT
+                const target = selectedDevice;
+                const date = new Date().toISOString().split('T')[0];
+                let simText = `[SECURE-NET AI DIAGNOSTIC - ${date}]\n`;
+                simText += `TARGET: ${target.ip} (${target.type})\n`;
+                simText += `OS KERNEL: ${target.os || "Unknown"}\n\n`;
+
+                if(target.vulns && target.vulns.length > 0) {
+                    // Sort by risk
+                    const sorted = [...target.vulns].sort((a,b) => (a.risk==='high'?-1:1));
+                    const v = sorted[0];
+
+                    simText += `!! CRITICAL VULNERABILITY DETECTED !!\n`;
+                    simText += `VECTOR: Port ${v.port} / ${v.service}\n`;
+                    simText += `THREAT ASSESSMENT: ${v.info}\n\n`;
+                    
+                    simText += `AI REMEDIATION STRATEGY:\n`;
+                    simText += `1. IMMEDIATE: ${v.remediation || v.fix || "Patch service immediately."}\n`;
+                    simText += `2. CONFIGURATION: Implement strict ACLs for port ${v.port}.\n`;
+                    simText += `3. LONG-TERM: Schedule automated patch management cycle.\n`;
+                    
+                    if(v.risk === 'high') {
+                         simText += `\nWARNING: High risk vector requires urgent attention to prevent remote code execution.`;
+                    }
+                } else {
+                    simText += `STATUS: SYSTEM SECURE\n`;
+                    simText += `No active vulnerability vectors detected in current scan depth.\n\n`;
+                    simText += `RECOMMENDATION:\n- Maintain firewall rules.\n- Continue periodic deep scans.`;
+                }
+
+                typeWriter(simText);
+            }
+        }
+
+        function typeWriter(txt) {
+            let i = 0;
+            const speed = 10; // Faster
+            function type() {
+                if(i < txt.length) {
+                    els.aiText.innerHTML += txt.charAt(i) === '\n' ? '<br>' : txt.charAt(i);
+                    i++;
+                    setTimeout(type, speed);
+                }
+            }
+            type();
+        }
+
+        // --- MAP ---
+        function toggleView() {
+            isMapView = !isMapView;
+            const btn = document.getElementById('viewToggleBtn');
+            
+            if(isMapView) {
+                // Show Map
+                els.orbit.classList.add('hidden');
+                els.map.classList.remove('hidden');
+                
+                if(btn) btn.innerHTML = '<i class="fa-solid fa-globe"></i> View Orbit';
+                
+                // Allow CSS transition to settle before drawing canvas
+                setTimeout(renderMap, 50);
+            } else {
+                // Show Orbit
+                els.orbit.classList.remove('hidden');
+                els.map.classList.add('hidden');
+                
+                if(btn) btn.innerHTML = '<i class="fa-solid fa-network-wired"></i> Topology';
+            }
+        }
+
+        function renderMap() {
+            const nodes = [{id:0, label:'Internet', color:'#fff', shape:'dot'}];
+            const edges = [];
+            currentData.forEach((d, i) => {
+                const id = i+1;
+                const isHigh = d.vulns && d.vulns.some(v=>v.risk==='high');
+                nodes.push({
+                    id: id, 
+                    label: `${d.type}\n${d.ip}`, 
+                    color: isHigh ? '#ff2a6d' : '#05d5fa',
+                    shape: d.type.includes('Gateway') ? 'diamond' : 'dot',
+                    font: { color: '#cbd5e1', face: 'Inter' }
+                });
+                edges.push({from: 0, to: id, color:{color:'rgba(255,255,255,0.2)'}});
+            });
+
+            if(mapInstance) mapInstance.destroy();
+            mapInstance = new vis.Network(els.map, {nodes, edges}, {
+                physics: { stabilization: false, barnesHut: { gravitationalConstant: -4000 } },
+                nodes: { borderWidth: 2, shadow:true },
+                interaction: { hover: true }
+            });
+        }
+
+        function exportPDF() {
+            const doc = new window.jspdf.jsPDF();
+            doc.setFontSize(20); doc.text("Net-Sentinel Security Report", 10, 20);
+            doc.setFontSize(12); doc.text(`Generated: ${new Date().toLocaleDateString()}`, 10, 30);
+            
+            let y = 50;
+            currentData.forEach(d => {
+                doc.setFont("helvetica", "bold");
+                doc.text(`Target: ${d.ip} (${d.type})`, 10, y);
+                y += 10;
+                if(d.vulns) {
+                    d.vulns.forEach(v => {
+                        doc.setFont("helvetica", "normal");
+                        doc.setTextColor(v.risk==='high'?200:0, 0, 0);
+                        doc.text(` - [${v.risk.toUpperCase()}] Port ${v.port}: ${v.service}`, 15, y);
+                        y += 7;
+                        doc.setTextColor(0,0,0);
+                    });
+                }
+                y += 10;
+            });
+            doc.save("NetSentinel_Report.pdf");
+        }
+
